@@ -11,6 +11,6 @@
 ---
 
 ### Quick Links
-- **[Main Repository](https://github.com/)**
-- **[Release Notes](../RELEASES.md)**
-- **[MIT License](../LICENSE)**
+- **[Main Repository](https://github.com/mumbo235/Multitool-Terminal)**
+- **[Release Notes](https://github.com/mumbo235/Multitool-Terminal/releases)**
+- **[MIT License](https://github.com/mumbo235/Multitool-Terminal/blob/main/LICENSE)**
