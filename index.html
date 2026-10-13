@@ -654,8 +654,9 @@
     };
 
     function updateUserStatusLabel() {
-      if (userStatusLabel) {
-        userStatusLabel.textContent = `${currentUser}@localhost [${wallet.balance}cr]`;
+      const label = (typeof userStatusLabel !== 'undefined' && userStatusLabel) ? userStatusLabel : document.getElementById('user-status-label');
+      if (label) {
+        label.textContent = `${currentUser}@localhost [${wallet.balance}cr]`;
       }
     }
 
@@ -711,6 +712,7 @@
     const cmdInput = document.getElementById('cmd-input');
     const promptPrefix = document.getElementById('prompt-prefix');
     const aiActiveLabel = document.getElementById('ai-active-label');
+    const userStatusLabel = document.getElementById('user-status-label');
     const ghostLayer = document.getElementById('ghost-layer');
     const ghostTyped = document.getElementById('ghost-typed');
     const ghostText = document.getElementById('ghost-text');
@@ -754,7 +756,17 @@
         if (savedEnv) envVars = { ...envVars, ...JSON.parse(savedEnv) };
 
         const savedAuth = localStorage.getItem(AUTH_KEY);
-        if (savedAuth) authData = JSON.parse(savedAuth);
+        if (savedAuth) {
+          authData = JSON.parse(savedAuth);
+          if (authData && !authData.users && authData.username) {
+            authData.users = {
+              [authData.username]: {
+                password: authData.password || '',
+                lastLogin: authData.lastLogin || ''
+              }
+            };
+          }
+        }
 
         const savedWallet = localStorage.getItem(WALLET_KEY);
         if (savedWallet) wallet = { ...wallet, ...JSON.parse(savedWallet) };
@@ -769,7 +781,13 @@
       setInterval(updateClock, 1000);
 
       terminalScreen.addEventListener('click', () => {
-        cmdInput.focus();
+        if (cmdInput) cmdInput.focus();
+      });
+      document.addEventListener('click', (e) => {
+        const sel = window.getSelection();
+        if (sel && sel.toString().length > 0) return;
+        if (e.target && (e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT')) return;
+        if (cmdInput) cmdInput.focus();
       });
       cmdInput.addEventListener('input', updateGhostAutocomplete);
       cmdInput.addEventListener('scroll', () => {
@@ -822,26 +840,25 @@
         loginStep = 'FIRST_RUN_USER';
         promptPrefix.innerHTML = `<span class="prompt-host">username</span><span class="prompt-symbol">:</span> `;
         cmdInput.type = 'text';
+        cmdInput.value = '';
+        if (cmdInput) cmdInput.focus();
       } else if (!forcePrompt && config.autoLogin) {
         currentUser = authData.username;
         isLoggedIn = true;
         loginStep = null;
         completeLoginSuccess(false);
         printInfo(`Auto-login active: Authenticated as <b>${currentUser}</b>.`);
-      } else if (!authData.password) {
-        // Passwordless account: skip password completely!
-        currentUser = authData.username;
-        isLoggedIn = true;
-        loginStep = null;
-        completeLoginSuccess(true);
-        printInfo(`No password required for <b>${currentUser}</b>. Logged in directly.`);
+        if (cmdInput) cmdInput.focus();
       } else {
-        printRaw(`
-<div><span class="prompt-host">login</span><span class="prompt-symbol">:</span> <span class="text-dim">(default: ${authData.username})</span></div>
-        `);
+        isLoggedIn = false;
         loginStep = 'LOGIN_USER';
         promptPrefix.innerHTML = `<span class="prompt-host">login</span><span class="prompt-symbol">:</span> `;
         cmdInput.type = 'text';
+        cmdInput.value = '';
+        printRaw(`
+<div><span class="prompt-host">login</span><span class="prompt-symbol">:</span> <span class="text-dim">(default: ${authData.username})</span></div>
+        `);
+        if (cmdInput) cmdInput.focus();
       }
     }
 
@@ -852,30 +869,45 @@
         if (!val || !/^[a-zA-Z0-9_-]{2,20}$/.test(val)) {
           printError('Invalid username. Must be 2-20 alphanumeric characters (_ or - allowed).');
           printLine('Enter username:');
+          cmdInput.value = '';
+          cmdInput.focus();
           return;
         }
         tempAuthInput.username = val;
         loginStep = 'FIRST_RUN_PASS';
-        printRaw(`<div>Set password for <span class="text-info text-bold">${val}</span> (press Enter to skip password):</div>`);
+        printRaw(`<div>Set password for <span class="text-info text-bold">${escapeHtml(val)}</span> (press Enter to skip password):</div>`);
         promptPrefix.innerHTML = `<span class="prompt-host">password</span><span class="prompt-symbol">:</span> `;
         cmdInput.type = 'password';
+        cmdInput.value = '';
+        cmdInput.focus();
         return;
       }
 
       if (loginStep === 'FIRST_RUN_PASS') {
         const pass = input;
-        authData = {
-          username: tempAuthInput.username,
-          password: pass ? safeBtoa(pass) : '',
-          lastLogin: new Date().toISOString()
+        const passHash = pass ? safeBtoa(pass) : '';
+        const nowIso = new Date().toISOString();
+        if (!authData) authData = {};
+        if (!authData.users) authData.users = {};
+
+        authData.username = tempAuthInput.username;
+        authData.password = passHash;
+        authData.lastLogin = nowIso;
+        authData.users[tempAuthInput.username] = {
+          password: passHash,
+          lastLogin: nowIso
         };
-        localStorage.setItem(AUTH_KEY, JSON.stringify(authData));
-        config.autoLogin = true; // Auto-login enabled by default once user profile exists
+
+        try {
+          localStorage.setItem(AUTH_KEY, JSON.stringify(authData));
+        } catch (e) {}
+        config.autoLogin = true;
         saveConfig();
         currentUser = authData.username;
         isLoggedIn = true;
         loginStep = null;
         cmdInput.type = 'text';
+        cmdInput.value = '';
 
         if (!authData.password) {
           printSuccess(`Account created for ${currentUser} without password. Passwordless login enabled.`);
@@ -883,30 +915,94 @@
           printSuccess(`Account created for ${currentUser}. Auto-login enabled by default.`);
         }
         completeLoginSuccess(true);
+        cmdInput.focus();
         return;
       }
 
       if (loginStep === 'LOGIN_USER') {
-        const attempt = val || authData.username;
-        tempAuthInput.attemptUser = attempt;
+        const defaultUser = authData ? authData.username : '';
+        const attempt = val || defaultUser;
+        if (!attempt) {
+          printError('Username cannot be empty.');
+          printLine('login:');
+          cmdInput.value = '';
+          cmdInput.focus();
+          return;
+        }
 
-        if (authData.password) {
-          loginStep = 'LOGIN_PASS';
-          printRaw(`<div>Password:</div>`);
-          promptPrefix.innerHTML = `<span class="prompt-host">Password</span><span class="prompt-symbol">:</span> `;
-          cmdInput.type = 'password';
-        } else {
-          // No password set: immediately skip password and authenticate
-          if (attempt.toLowerCase() === authData.username.toLowerCase()) {
-            currentUser = authData.username;
+        let matchedUser = null;
+        let matchedProfile = null;
+        if (authData && authData.users && authData.users[attempt]) {
+          matchedUser = attempt;
+          matchedProfile = authData.users[attempt];
+        } else if (authData && authData.username && attempt.toLowerCase() === authData.username.toLowerCase()) {
+          matchedUser = authData.username;
+          matchedProfile = { password: authData.password || '', lastLogin: authData.lastLogin || '' };
+        } else if (authData && authData.users) {
+          const found = Object.keys(authData.users).find(k => k.toLowerCase() === attempt.toLowerCase());
+          if (found) {
+            matchedUser = found;
+            matchedProfile = authData.users[found];
+          }
+        }
+
+        if (matchedUser && matchedProfile) {
+          tempAuthInput.attemptUser = matchedUser;
+          if (matchedProfile.password) {
+            loginStep = 'LOGIN_PASS';
+            printRaw(`<div>Password:</div>`);
+            promptPrefix.innerHTML = `<span class="prompt-host">Password</span><span class="prompt-symbol">:</span> `;
+            cmdInput.type = 'password';
+            cmdInput.value = '';
+            cmdInput.focus();
+          } else {
+            currentUser = matchedUser;
+            authData.username = matchedUser;
+            authData.password = '';
+            if (authData.users && authData.users[matchedUser]) {
+              authData.users[matchedUser].lastLogin = new Date().toISOString();
+            }
+            try {
+              localStorage.setItem(AUTH_KEY, JSON.stringify(authData));
+            } catch (e) {}
             isLoggedIn = true;
             loginStep = null;
+            cmdInput.type = 'text';
+            cmdInput.value = '';
             printInfo(`Passwordless account: Skipped password. Authenticated as <b>${currentUser}</b>.`);
             completeLoginSuccess(true);
-          } else {
-            printError('Login incorrect.');
-            printLine('login:');
+            cmdInput.focus();
           }
+          return;
+        }
+
+        tempAuthInput.newUser = attempt;
+        loginStep = 'CONFIRM_NEW_USER';
+        printRaw(`<div>User <span class="text-warning text-bold">${escapeHtml(attempt)}</span> does not exist. Create new account? <span class="text-accent text-bold">[y/n]</span>:</div>`);
+        promptPrefix.innerHTML = `<span class="prompt-host">create user? (y/n)</span><span class="prompt-symbol">:</span> `;
+        cmdInput.type = 'text';
+        cmdInput.value = '';
+        cmdInput.focus();
+        return;
+      }
+
+      if (loginStep === 'CONFIRM_NEW_USER') {
+        const choice = val.toLowerCase();
+        if (choice === 'y' || choice === 'yes') {
+          tempAuthInput.username = tempAuthInput.newUser;
+          loginStep = 'FIRST_RUN_PASS';
+          printRaw(`<div>Set password for <span class="text-info text-bold">${escapeHtml(tempAuthInput.username)}</span> (press Enter to skip password):</div>`);
+          promptPrefix.innerHTML = `<span class="prompt-host">password</span><span class="prompt-symbol">:</span> `;
+          cmdInput.type = 'password';
+          cmdInput.value = '';
+          cmdInput.focus();
+        } else {
+          loginStep = 'LOGIN_USER';
+          promptPrefix.innerHTML = `<span class="prompt-host">login</span><span class="prompt-symbol">:</span> `;
+          cmdInput.type = 'text';
+          cmdInput.value = '';
+          printInfo('Login aborted. Enter username:');
+          cmdInput.focus();
         }
         return;
       }
@@ -914,39 +1010,54 @@
       if (loginStep === 'LOGIN_PASS') {
         const enteredPass = input;
         cmdInput.type = 'text';
-        const expectedUser = authData.username.toLowerCase();
-        const attemptedUser = (tempAuthInput.attemptUser || '').toLowerCase();
-        const expectedPass = authData.password;
+        const attempt = tempAuthInput.attemptUser;
+        let expectedPass = '';
 
-        // If account has no password, immediately succeed
-        if (!expectedPass || (attemptedUser === expectedUser && (!enteredPass || safeBtoa(enteredPass) === expectedPass))) {
-          currentUser = authData.username;
-          isLoggedIn = true;
-          loginStep = null;
-          completeLoginSuccess(true);
-          return;
+        if (authData && authData.users && authData.users[attempt]) {
+          expectedPass = authData.users[attempt].password || '';
+        } else if (authData && authData.username && attempt.toLowerCase() === authData.username.toLowerCase()) {
+          expectedPass = authData.password || '';
         }
 
-        const enteredHash = safeBtoa(enteredPass);
-        if (attemptedUser === expectedUser && enteredHash === expectedPass) {
-          currentUser = authData.username;
+        const isMatch = (!expectedPass && !enteredPass) || (safeBtoa(enteredPass) === expectedPass);
+
+        if (isMatch) {
+          currentUser = attempt;
+          authData.username = attempt;
+          authData.password = expectedPass;
+          if (!authData.users) authData.users = {};
+          if (!authData.users[attempt]) authData.users[attempt] = { password: expectedPass };
+          authData.users[attempt].lastLogin = new Date().toISOString();
+          try {
+            localStorage.setItem(AUTH_KEY, JSON.stringify(authData));
+          } catch (e) {}
           isLoggedIn = true;
           loginStep = null;
+          cmdInput.value = '';
           completeLoginSuccess(true);
+          cmdInput.focus();
         } else {
           printError('Login incorrect.');
           loginStep = 'LOGIN_USER';
-          printLine('login:');
           promptPrefix.innerHTML = `<span class="prompt-host">login</span><span class="prompt-symbol">:</span> `;
+          cmdInput.value = '';
+          cmdInput.focus();
         }
         return;
       }
     }
 
     function completeLoginSuccess(showWelcome = true) {
-      const prevLogin = authData.lastLogin ? new Date(authData.lastLogin).toLocaleString() : 'First session';
-      authData.lastLogin = new Date().toISOString();
-      localStorage.setItem(AUTH_KEY, JSON.stringify(authData));
+      const prevLogin = (authData && authData.lastLogin) ? new Date(authData.lastLogin).toLocaleString() : 'First session';
+      if (authData) {
+        authData.lastLogin = new Date().toISOString();
+        if (authData.users && currentUser && authData.users[currentUser]) {
+          authData.users[currentUser].lastLogin = authData.lastLogin;
+        }
+        try {
+          localStorage.setItem(AUTH_KEY, JSON.stringify(authData));
+        } catch (e) {}
+      }
 
       envVars.USER = currentUser;
       updateUserStatusLabel();
@@ -959,6 +1070,9 @@
       }
 
       updatePromptPrefix();
+      cmdInput.type = 'text';
+      cmdInput.value = '';
+      if (cmdInput) cmdInput.focus();
       scrollToBottom();
     }
 
@@ -1570,6 +1684,21 @@
         printInfo('Exited AI chat mode.');
         return;
       }
+      if (loginStep) {
+        cmdInput.type = 'text';
+        cmdInput.value = '';
+        if (isLoggedIn) {
+          loginStep = null;
+          updatePromptPrefix();
+          printInfo('Login prompt cancelled.');
+        } else {
+          loginStep = 'LOGIN_USER';
+          promptPrefix.innerHTML = `<span class="prompt-host">login</span><span class="prompt-symbol">:</span> `;
+          printLine('login:');
+        }
+        if (cmdInput) cmdInput.focus();
+        return;
+      }
       printRaw(`<div><span class="prompt-symbol">^C</span></div>`);
     }
 
@@ -1676,6 +1805,7 @@
           cmdLogout();
           break;
         case 'login':
+        case 'su':
           cmdLogin(args.slice(1));
           break;
         case 'passwd':
@@ -3054,51 +3184,102 @@
        ========================================================================== */
     function cmdLogout() {
       isLoggedIn = false;
-      cmdClear();
-      renderAsciiBanner();
-      if (!authData || !authData.password) {
-        printInfo(`Logged out from session. Profile '${authData ? authData.username : 'user'}' has no password configured (passwordless).`);
-      } else {
-        printInfo(`Logged out from session. Please log in to continue:`);
-      }
-      checkAuthAndStart(true);
+      loginStep = 'LOGIN_USER';
+      cmdInput.type = 'text';
+      cmdInput.value = '';
+      promptPrefix.innerHTML = `<span class="prompt-host">login</span><span class="prompt-symbol">:</span> `;
+      const label = (typeof userStatusLabel !== 'undefined' && userStatusLabel) ? userStatusLabel : document.getElementById('user-status-label');
+      if (label) label.textContent = `visitor@localhost [${wallet.balance}cr]`;
+      printInfo(`Logged out from session. Enter username to log in (default: <b>${authData ? authData.username : 'user'}</b>):`);
+      if (cmdInput) cmdInput.focus();
     }
 
     function cmdLogin(args) {
-      if (!authData || !authData.username) {
-        checkAuthAndStart(true);
+      const targetUser = args && args[0] ? args[0].trim() : '';
+      if (targetUser) {
+        tempAuthInput.attemptUser = targetUser;
+        let targetProfile = null;
+        if (authData && authData.users && authData.users[targetUser]) {
+          targetProfile = authData.users[targetUser];
+        } else if (authData && authData.username && targetUser.toLowerCase() === authData.username.toLowerCase()) {
+          targetProfile = { password: authData.password || '', lastLogin: authData.lastLogin || '' };
+        } else if (authData && authData.users) {
+          const matchKey = Object.keys(authData.users).find(k => k.toLowerCase() === targetUser.toLowerCase());
+          if (matchKey) {
+            tempAuthInput.attemptUser = matchKey;
+            targetProfile = authData.users[matchKey];
+          }
+        }
+
+        if (targetProfile) {
+          if (targetProfile.password) {
+            isLoggedIn = false;
+            loginStep = 'LOGIN_PASS';
+            printRaw(`<div>Password for <span class="text-info text-bold">${tempAuthInput.attemptUser}</span>:</div>`);
+            promptPrefix.innerHTML = `<span class="prompt-host">Password</span><span class="prompt-symbol">:</span> `;
+            cmdInput.type = 'password';
+            cmdInput.value = '';
+            if (cmdInput) cmdInput.focus();
+          } else {
+            currentUser = tempAuthInput.attemptUser;
+            if (authData) authData.username = currentUser;
+            isLoggedIn = true;
+            loginStep = null;
+            cmdInput.type = 'text';
+            cmdInput.value = '';
+            printInfo(`Passwordless account: Skipped password. Authenticated as <b>${currentUser}</b>.`);
+            completeLoginSuccess(true);
+            if (cmdInput) cmdInput.focus();
+          }
+          return;
+        }
+
+        tempAuthInput.newUser = targetUser;
+        loginStep = 'CONFIRM_NEW_USER';
+        printRaw(`<div>User <span class="text-warning text-bold">${escapeHtml(targetUser)}</span> does not exist. Create new profile? <span class="text-accent text-bold">[y/n]</span>:</div>`);
+        promptPrefix.innerHTML = `<span class="prompt-host">create user? (y/n)</span><span class="prompt-symbol">:</span> `;
+        cmdInput.type = 'text';
+        cmdInput.value = '';
+        if (cmdInput) cmdInput.focus();
         return;
       }
-      if (!authData.password) {
-        currentUser = authData.username;
-        isLoggedIn = true;
-        loginStep = null;
-        printInfo(`Passwordless account: Skipped password. Authenticated as <b>${currentUser}</b>.`);
-        completeLoginSuccess(false);
-        return;
-      }
+
       isLoggedIn = false;
-      cmdClear();
-      renderAsciiBanner();
-      checkAuthAndStart(true);
+      loginStep = 'LOGIN_USER';
+      promptPrefix.innerHTML = `<span class="prompt-host">login</span><span class="prompt-symbol">:</span> `;
+      cmdInput.type = 'text';
+      cmdInput.value = '';
+      const def = authData ? authData.username : 'user';
+      printRaw(`<div><span class="prompt-host">login</span><span class="prompt-symbol">:</span> <span class="text-dim">(default: ${def})</span></div>`);
+      if (cmdInput) cmdInput.focus();
     }
 
     function cmdPasswd() {
       printRaw(`<div>Enter new password for ${currentUser} (or press Enter to remove password):</div>`);
       cmdInput.type = 'password';
+      cmdInput.value = '';
+      if (cmdInput) cmdInput.focus();
       wizardHandler = (newPass) => {
         cmdInput.type = 'text';
+        cmdInput.value = '';
         wizardHandler = null;
         updatePromptPrefix();
-        authData.password = newPass ? safeBtoa(newPass) : '';
-        localStorage.setItem(AUTH_KEY, JSON.stringify(authData));
+        const passHash = newPass ? safeBtoa(newPass) : '';
+        if (!authData) authData = { username: currentUser, lastLogin: new Date().toISOString() };
+        authData.password = passHash;
+        if (!authData.users) authData.users = {};
+        if (!authData.users[currentUser]) authData.users[currentUser] = { lastLogin: new Date().toISOString() };
+        authData.users[currentUser].password = passHash;
+        try {
+          localStorage.setItem(AUTH_KEY, JSON.stringify(authData));
+        } catch (e) {}
         if (authData.password) {
           printSuccess('Password updated.');
         } else {
           printSuccess('Password removed. Passwordless login active (future logins will skip password).');
         }
+        if (cmdInput) cmdInput.focus();
       };
-      updatePromptPrefix();
     }
 
     function cmdUptime() {
