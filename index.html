@@ -842,6 +842,14 @@
         cmdInput.type = 'text';
         cmdInput.value = '';
         if (cmdInput) cmdInput.focus();
+      } else if (!authData.password) {
+        // Passwordless account: never ask to click Enter! Log in directly!
+        currentUser = authData.username;
+        isLoggedIn = true;
+        loginStep = null;
+        completeLoginSuccess(false);
+        printInfo(`No password required for <b>${currentUser}</b>. Logged in directly.`);
+        if (cmdInput) cmdInput.focus();
       } else if (!forcePrompt && config.autoLogin) {
         currentUser = authData.username;
         isLoggedIn = true;
@@ -1802,7 +1810,7 @@
           printLine(`${currentUser} (${envVars.HOST})`);
           break;
         case 'logout':
-          cmdLogout();
+          cmdLogout(args.slice(1));
           break;
         case 'login':
         case 'su':
@@ -3182,7 +3190,18 @@
     /* ==========================================================================
        Authentication & Session Commands
        ========================================================================== */
-    function cmdLogout() {
+    function cmdLogout(args) {
+      const isForced = args && (args.includes('-f') || args.includes('--force') || args.includes('switch'));
+      if (!isForced && (!authData || !authData.password)) {
+        // Passwordless account: no password required, so do not trap the user with an Enter prompt!
+        printInfo(`Profile '<b>${authData ? authData.username : currentUser}</b>' is passwordless (no password required). You remain logged in. To protect with a password, use <code>passwd</code>. To switch or add a user, use <code>login &lt;username&gt;</code>.`);
+        isLoggedIn = true;
+        loginStep = null;
+        updatePromptPrefix();
+        if (cmdInput) cmdInput.focus();
+        return;
+      }
+
       isLoggedIn = false;
       loginStep = 'LOGIN_USER';
       cmdInput.type = 'text';
@@ -3240,6 +3259,18 @@
         promptPrefix.innerHTML = `<span class="prompt-host">create user? (y/n)</span><span class="prompt-symbol">:</span> `;
         cmdInput.type = 'text';
         cmdInput.value = '';
+        if (cmdInput) cmdInput.focus();
+        return;
+      }
+
+      // No username argument given:
+      if (!authData || !authData.password) {
+        // Passwordless account: log in directly without requiring Enter!
+        currentUser = authData ? authData.username : 'user';
+        isLoggedIn = true;
+        loginStep = null;
+        printInfo(`Passwordless account: Skipped password. Authenticated as <b>${currentUser}</b>.`);
+        completeLoginSuccess(false);
         if (cmdInput) cmdInput.focus();
         return;
       }
