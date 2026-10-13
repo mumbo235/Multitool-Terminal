@@ -82,16 +82,12 @@ Enter password (optional - press Enter to skip for passwordless login):
 
 ## Command Autocomplete
 
-Typing inside the terminal is accelerated by a real-time autocomplete engine:
+Typing inside the terminal is accelerated by an inline ghost text autocomplete engine:
 
-1. **Type a Prefix**: As you type (e.g., `slo`), a dynamic pill bar appears directly above the prompt line:
-   ```
-   Suggest: [slots] [sl]
-   ```
-2. **Accept with a Single Key**: Press **`[Tab]`** or **`[Right Arrow]`** to accept the selected command immediately.
-3. **Cycle Matches**: Press **`[Tab]`**, **`[Down Arrow]`**, or **`[Up Arrow]`** to step through available candidates.
-4. **Mouse Click**: You can also click any suggested pill chip directly with your mouse.
-5. **Dismiss Suggestions**: Press **`[Esc]`**, delete your input, or execute the command to clear the bar.
+1. **Type a Prefix**: As you type (e.g., `slo`), the closest matching command appears in dim grey inline right on the text line (e.g. `slots`).
+2. **Accept with Tab**: Press **`[Tab]`** or **`[Right Arrow]`** to accept and complete the suggestion into your input buffer.
+3. **Session History Support**: Recent commands from your session history are prioritized for fast recall.
+4. **Dismissal**: Press **`[Esc]`** or backspace to clear the suggestion.
 
 ---
 

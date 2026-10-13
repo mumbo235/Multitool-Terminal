@@ -72,12 +72,11 @@ Then navigate to `http://localhost:8080`.
 
 ## Command Autocomplete Engine
 
-Typing inside the terminal features real-time, interactive autocompletion:
-- **Live Suggestion Bar**: As you type, matching command chips appear above the prompt line (`Suggest: [slots] [sl] [stopwatch]`).
-- **Single-Key Acceptance**: Press **`[Tab]`** or **`[&rarr;]`** (Right Arrow) to instantly accept the highlighted completion.
-- **Cycling Suggestions**: Pressing **`[Tab]`**, **`[&darr;]`**, or **`[&uarr;]`** cycles through matched candidates.
-- **Clickable Chips**: Click any suggested pill with the mouse to complete it directly into the input buffer.
-- **Clean Dismissal**: Press **`[Esc]`**, backspace to empty, or submit a command to dismiss suggestions.
+Typing inside the terminal features seamless inline ghost text autocompletion:
+- **Inline Ghost Suggestions**: As you type, the closest matching command appears in dim grey inline right on the text line (inspired by fish shell and zsh-autosuggestions).
+- **Single-Key Tab Acceptance**: Press **`[Tab]`** or **`[&rarr;]`** (Right Arrow) to instantly complete the suggestion directly into your input buffer.
+- **History Priority**: Previously executed commands from your session history take precedence, allowing instant re-execution of complex command lines.
+- **Clean Dismissal**: Press **`[Esc]`**, backspace, or submit a command to dismiss the ghost text.
 
 ---
 
